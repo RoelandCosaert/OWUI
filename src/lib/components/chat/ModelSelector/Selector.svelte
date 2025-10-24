@@ -104,9 +104,9 @@
 	const getModelCategories = (model: any, userId: string | undefined) => {
 		const categories = new Set<Category>(['all']);
 
-		if (!model) {
-			return categories;
-		}
+                if (!model) {
+                        return categories;
+                }
 
 		if (isExternalModel(model)) {
 			categories.add('external');
@@ -124,8 +124,8 @@
 			categories.add('owned');
 		}
 
-		return categories;
-	};
+                return categories;
+        };
 
 	const matchesSelectedCategory = (item, category: Category, userId: string | undefined) => {
 		const categories = getModelCategories(item.model, userId);
@@ -154,10 +154,10 @@
 			owned: false
 		};
 
-		for (const item of items) {
-			if (!isVisibleItem(item)) {
-				continue;
-			}
+                for (const item of items) {
+                        if (!isVisibleItem(item)) {
+                                continue;
+                        }
 
 			const categories = getModelCategories(item.model, currentUserId);
 
