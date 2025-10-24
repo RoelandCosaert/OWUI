@@ -82,7 +82,7 @@
 	const getOwnerId = (model: any) => (model && Object.prototype.hasOwnProperty.call(model, 'user_id') ? model.user_id : undefined);
 	const isExternalModel = (model: any) => model?.connection_type === 'external' && !model?.direct;
 	const isFeaturedModel = (model: any) => hasAccessControl(model) && getAccessControl(model) === null;
-	const isSharedModel = (model: any) => {
+	const isSharedModel = (model: any, userId: string | undefined) => {
 		if (!hasAccessControl(model)) return false;
 		const accessControl = getAccessControl(model);
 		const ownerId = getOwnerId(model);
@@ -91,17 +91,17 @@
 			accessControl !== null &&
 			accessControl !== undefined &&
 			ownerId !== undefined &&
-			ownerId !== currentUserId
+			ownerId !== userId
 		);
 	};
-	const isOwnedModel = (model: any) => {
-			const ownerId = getOwnerId(model);
-			return ownerId !== undefined && ownerId === currentUserId;
+	const isOwnedModel = (model: any, userId: string | undefined) => {
+		const ownerId = getOwnerId(model);
+		return ownerId !== undefined && ownerId === userId;
 	};
 
 	const isVisibleItem = (item) => !(item.model?.info?.meta?.hidden ?? false);
 
-	const getModelCategories = (model: any) => {
+	const getModelCategories = (model: any, userId: string | undefined) => {
 		const categories = new Set<Category>(['all']);
 
 		if (!model) {
@@ -116,20 +116,20 @@
 			categories.add('featured');
 		}
 
-		if (isSharedModel(model)) {
+		if (isSharedModel(model, userId)) {
 			categories.add('shared');
 		}
 
-		if (isOwnedModel(model)) {
+		if (isOwnedModel(model, userId)) {
 			categories.add('owned');
 		}
 
 		return categories;
 	};
 
-	const matchesSelectedCategory = (item, category: Category) => {
-			const categories = getModelCategories(item.model);
-			return categories.has(category);
+	const matchesSelectedCategory = (item, category: Category, userId: string | undefined) => {
+		const categories = getModelCategories(item.model, userId);
+		return categories.has(category);
 	};
 
 	let categoryAvailability: Record<SpecificCategory, boolean> = {
@@ -159,7 +159,7 @@
 				continue;
 			}
 
-			const categories = getModelCategories(item.model);
+			const categories = getModelCategories(item.model, currentUserId);
 
 			if (categories.has('external')) {
 				availability.external = true;
@@ -235,8 +235,8 @@
 			? fuse
 				.search(searchValue)
 				.map((e) => e.item)
-				.filter((item) => matchesSelectedCategory(item, selectedCategory))
-			: items.filter((item) => matchesSelectedCategory(item, selectedCategory))
+				.filter((item) => matchesSelectedCategory(item, selectedCategory, currentUserId))
+			: items.filter((item) => matchesSelectedCategory(item, selectedCategory, currentUserId))
 	).filter((item) => !(item.model?.info?.meta?.hidden ?? false));
 
 	$: if (selectedCategory) {
@@ -539,96 +539,96 @@
 			{/if}
 
 							<div class="px-3">
-                                {#if showCategoryFilters}
-                                        <div
-                                                class=" flex w-full bg-white dark:bg-gray-850 overflow-x-auto scrollbar-none mb-0.5"
-                                                on:wheel={(e) => {
-                                                        if (e.deltaY !== 0) {
-                                                                e.preventDefault();
-                                                                e.currentTarget.scrollLeft += e.deltaY;
-                                                        }
-                                                }}
-                                        >
-                                                <div
-                                                        class="flex gap-1 w-fit text-center text-sm font-medium rounded-full bg-transparent px-1.5 pb-0.5"
-                                                        bind:this={tagsContainerElement}
-                                                >
-                                                        <button
-                                                                type="button"
-                                                                class="min-w-fit outline-none px-1.5 py-0.5 {selectedCategory === 'all'
-                                                                        ? ''
-                                                                        : 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
-                                                                aria-pressed={selectedCategory === 'all'}
-                                                                on:click={() => {
-                                                                        selectedCategory = 'all';
-                                                                }}
-                                                        >
-                                                                {$i18n.t('All')}
-                                                        </button>
+				{#if showCategoryFilters}
+					<div
+						class=" flex w-full bg-white dark:bg-gray-850 overflow-x-auto scrollbar-none mb-0.5"
+						on:wheel={(e) => {
+							if (e.deltaY !== 0) {
+								e.preventDefault();
+								e.currentTarget.scrollLeft += e.deltaY;
+							}
+						}}
+					>
+						<div
+							class="flex gap-1 w-fit text-center text-sm font-medium rounded-full bg-transparent px-1.5 pb-0.5"
+							bind:this={tagsContainerElement}
+						>
+							<button
+								type="button"
+								class="min-w-fit outline-none px-1.5 py-0.5 {selectedCategory === 'all'
+									? ''
+									: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
+								aria-pressed={selectedCategory === 'all'}
+								on:click={() => {
+									selectedCategory = 'all';
+								}}
+							>
+								{$i18n.t('All')}
+							</button>
 
-                                                        {#if hasExternalModels}
-                                                                <button
-                                                                        type="button"
-                                                                        class="min-w-fit outline-none px-1.5 py-0.5 {selectedCategory === 'external'
-                                                                                ? ''
-                                                                                : 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
-                                                                        aria-pressed={selectedCategory === 'external'}
-                                                                        on:click={() => {
-                                                                                selectedCategory = 'external';
-                                                                        }}
-                                                                >
-                                                                        {$i18n.t('External')}
-                                                                </button>
-                                                        {/if}
+							{#if hasExternalModels}
+								<button
+									type="button"
+									class="min-w-fit outline-none px-1.5 py-0.5 {selectedCategory === 'external'
+										? ''
+										: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
+									aria-pressed={selectedCategory === 'external'}
+									on:click={() => {
+										selectedCategory = 'external';
+									}}
+								>
+									{$i18n.t('External')}
+								</button>
+							{/if}
 
-                                                        {#if hasFeaturedModels}
-                                                                <button
-                                                                        type="button"
-                                                                        class="min-w-fit outline-none px-1.5 py-0.5 {selectedCategory === 'featured'
-                                                                                ? ''
-                                                                                : 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
-                                                                        aria-pressed={selectedCategory === 'featured'}
-                                                                        on:click={() => {
-                                                                                selectedCategory = 'featured';
-                                                                        }}
-                                                                >
-                                                                        {$i18n.t('Featured')}
-                                                                </button>
-                                                        {/if}
+							{#if hasFeaturedModels}
+								<button
+									type="button"
+									class="min-w-fit outline-none px-1.5 py-0.5 {selectedCategory === 'featured'
+										? ''
+										: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
+									aria-pressed={selectedCategory === 'featured'}
+									on:click={() => {
+										selectedCategory = 'featured';
+									}}
+								>
+									{$i18n.t('Featured')}
+								</button>
+							{/if}
 
-                                                        {#if hasSharedModels}
-                                                                <button
-                                                                        type="button"
-                                                                        class="min-w-fit outline-none px-1.5 py-0.5 {selectedCategory === 'shared'
-                                                                                ? ''
-                                                                                : 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
-                                                                        aria-pressed={selectedCategory === 'shared'}
-                                                                        on:click={() => {
-                                                                                selectedCategory = 'shared';
-                                                                        }}
-                                                                >
-                                                                        {$i18n.t('Shared')}
-                                                                </button>
-                                                        {/if}
+							{#if hasSharedModels}
+								<button
+									type="button"
+									class="min-w-fit outline-none px-1.5 py-0.5 {selectedCategory === 'shared'
+										? ''
+										: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
+									aria-pressed={selectedCategory === 'shared'}
+									on:click={() => {
+										selectedCategory = 'shared';
+									}}
+								>
+									{$i18n.t('Shared')}
+								</button>
+							{/if}
 
-                                                        {#if hasOwnedModels}
-                                                                <button
-                                                                        type="button"
-                                                                        class="min-w-fit outline-none px-1.5 py-0.5 {selectedCategory === 'owned'
-                                                                                ? ''
-                                                                                : 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
-                                                                        aria-pressed={selectedCategory === 'owned'}
-                                                                        on:click={() => {
-                                                                                selectedCategory = 'owned';
-                                                                        }}
-                                                                >
-                                                                        {$i18n.t('Owned')}
-                                                                </button>
-                                                        {/if}
-                                                </div>
-                                        </div>
-                                {/if}
-                        </div>
+							{#if hasOwnedModels}
+								<button
+									type="button"
+									class="min-w-fit outline-none px-1.5 py-0.5 {selectedCategory === 'owned'
+										? ''
+										: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
+									aria-pressed={selectedCategory === 'owned'}
+									on:click={() => {
+										selectedCategory = 'owned';
+									}}
+								>
+									{$i18n.t('Owned')}
+								</button>
+							{/if}
+						</div>
+					</div>
+				{/if}
+			</div>
 
 			<div class="px-2.5 max-h-64 overflow-y-auto group relative">
 				{#each filteredItems as item, index}
