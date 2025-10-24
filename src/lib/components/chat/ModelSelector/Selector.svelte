@@ -82,31 +82,31 @@
 	const getOwnerId = (model: any) => (model && Object.prototype.hasOwnProperty.call(model, 'user_id') ? model.user_id : undefined);
 	const isExternalModel = (model: any) => model?.connection_type === 'external' && !model?.direct;
 	const isFeaturedModel = (model: any) => hasAccessControl(model) && getAccessControl(model) === null;
-	const isSharedModel = (model: any) => {
-		if (!hasAccessControl(model)) return false;
-		const accessControl = getAccessControl(model);
-		const ownerId = getOwnerId(model);
+        const isSharedModel = (model: any, userId: string | undefined) => {
+                if (!hasAccessControl(model)) return false;
+                const accessControl = getAccessControl(model);
+                const ownerId = getOwnerId(model);
 
-		return (
-			accessControl !== null &&
-			accessControl !== undefined &&
-			ownerId !== undefined &&
-			ownerId !== currentUserId
-		);
-	};
-	const isOwnedModel = (model: any) => {
-			const ownerId = getOwnerId(model);
-			return ownerId !== undefined && ownerId === currentUserId;
-	};
+                return (
+                        accessControl !== null &&
+                        accessControl !== undefined &&
+                        ownerId !== undefined &&
+                        ownerId !== userId
+                );
+        };
+        const isOwnedModel = (model: any, userId: string | undefined) => {
+                const ownerId = getOwnerId(model);
+                return ownerId !== undefined && ownerId === userId;
+        };
 
 	const isVisibleItem = (item) => !(item.model?.info?.meta?.hidden ?? false);
 
-	const getModelCategories = (model: any) => {
-		const categories = new Set<Category>(['all']);
+        const getModelCategories = (model: any, userId: string | undefined) => {
+                const categories = new Set<Category>(['all']);
 
-		if (!model) {
-			return categories;
-		}
+                if (!model) {
+                        return categories;
+                }
 
 		if (isExternalModel(model)) {
 			categories.add('external');
@@ -116,21 +116,21 @@
 			categories.add('featured');
 		}
 
-		if (isSharedModel(model)) {
-			categories.add('shared');
-		}
+                if (isSharedModel(model, userId)) {
+                        categories.add('shared');
+                }
 
-		if (isOwnedModel(model)) {
-			categories.add('owned');
-		}
+                if (isOwnedModel(model, userId)) {
+                        categories.add('owned');
+                }
 
-		return categories;
-	};
+                return categories;
+        };
 
-	const matchesSelectedCategory = (item, category: Category) => {
-			const categories = getModelCategories(item.model);
-			return categories.has(category);
-	};
+        const matchesSelectedCategory = (item, category: Category, userId: string | undefined) => {
+                const categories = getModelCategories(item.model, userId);
+                return categories.has(category);
+        };
 
 	let categoryAvailability: Record<SpecificCategory, boolean> = {
 		external: false,
@@ -154,12 +154,12 @@
 			owned: false
 		};
 
-		for (const item of items) {
-			if (!isVisibleItem(item)) {
-				continue;
-			}
+                for (const item of items) {
+                        if (!isVisibleItem(item)) {
+                                continue;
+                        }
 
-			const categories = getModelCategories(item.model);
+                        const categories = getModelCategories(item.model, currentUserId);
 
 			if (categories.has('external')) {
 				availability.external = true;
@@ -230,14 +230,14 @@
 		updateFuse();
 	}
 
-	$: filteredItems = (
-		searchValue
-			? fuse
-				.search(searchValue)
-				.map((e) => e.item)
-				.filter((item) => matchesSelectedCategory(item, selectedCategory))
-			: items.filter((item) => matchesSelectedCategory(item, selectedCategory))
-	).filter((item) => !(item.model?.info?.meta?.hidden ?? false));
+        $: filteredItems = (
+                searchValue
+                        ? fuse
+                                .search(searchValue)
+                                .map((e) => e.item)
+                                .filter((item) => matchesSelectedCategory(item, selectedCategory, currentUserId))
+                        : items.filter((item) => matchesSelectedCategory(item, selectedCategory, currentUserId))
+        ).filter((item) => !(item.model?.info?.meta?.hidden ?? false));
 
 	$: if (selectedCategory) {
 		resetView();
