@@ -61,15 +61,135 @@
 	let tagsContainerElement;
 
 	let show = false;
-	let tags = [];
+	// let tags = [];
 
 	let selectedModel = '';
 	$: selectedModel = items.find((item) => item.value === value) ?? '';
 
 	let searchValue = '';
 
-	let selectedTag = '';
-	let selectedConnectionType = '';
+	// let selectedTag = '';
+	// let selectedConnectionType = '';
+	type Category = 'all' | 'external' | 'featured' | 'shared' | 'owned';
+	type SpecificCategory = Exclude<Category, 'all'>;
+
+	let selectedCategory: Category = 'all';
+
+	let currentUserId: string | undefined;
+	const hasAccessControl = (model: any) =>
+		model && Object.prototype.hasOwnProperty.call(model, 'access_control');
+	const getAccessControl = (model: any) => (hasAccessControl(model) ? model.access_control : undefined);
+	const getOwnerId = (model: any) => (model && Object.prototype.hasOwnProperty.call(model, 'user_id') ? model.user_id : undefined);
+	const isExternalModel = (model: any) => model?.connection_type === 'external' && !model?.direct;
+	const isFeaturedModel = (model: any) => hasAccessControl(model) && getAccessControl(model) === null;
+	const isSharedModel = (model: any) => {
+		if (!hasAccessControl(model)) return false;
+		const accessControl = getAccessControl(model);
+		const ownerId = getOwnerId(model);
+
+		return (
+			accessControl !== null &&
+			accessControl !== undefined &&
+			ownerId !== undefined &&
+			ownerId !== currentUserId
+		);
+	};
+	const isOwnedModel = (model: any) => {
+			const ownerId = getOwnerId(model);
+			return ownerId !== undefined && ownerId === currentUserId;
+	};
+
+	const isVisibleItem = (item) => !(item.model?.info?.meta?.hidden ?? false);
+
+	const getModelCategories = (model: any) => {
+		const categories = new Set<Category>(['all']);
+
+		if (!model) {
+			return categories;
+		}
+
+		if (isExternalModel(model)) {
+			categories.add('external');
+		}
+
+		if (isFeaturedModel(model)) {
+			categories.add('featured');
+		}
+
+		if (isSharedModel(model)) {
+			categories.add('shared');
+		}
+
+		if (isOwnedModel(model)) {
+			categories.add('owned');
+		}
+
+		return categories;
+	};
+
+	const matchesSelectedCategory = (item, category: Category) => {
+			const categories = getModelCategories(item.model);
+			return categories.has(category);
+	};
+
+	let categoryAvailability: Record<SpecificCategory, boolean> = {
+		external: false,
+		featured: false,
+		shared: false,
+		owned: false
+	};
+
+	let hasExternalModels = false;
+	let hasFeaturedModels = false;
+	let hasSharedModels = false;
+	let hasOwnedModels = false;
+	let showCategoryFilters = false;
+
+	$: currentUserId = $user?.id;
+	$: {
+		const availability: Record<SpecificCategory, boolean> = {
+			external: false,
+			featured: false,
+			shared: false,
+			owned: false
+		};
+
+		for (const item of items) {
+			if (!isVisibleItem(item)) {
+				continue;
+			}
+
+			const categories = getModelCategories(item.model);
+
+			if (categories.has('external')) {
+				availability.external = true;
+			}
+
+			if (categories.has('featured')) {
+				availability.featured = true;
+			}
+
+			if (categories.has('shared')) {
+				availability.shared = true;
+			}
+
+			if (categories.has('owned')) {
+				availability.owned = true;
+			}
+		}
+
+		categoryAvailability = availability;
+	}
+
+	$: hasExternalModels = categoryAvailability.external;
+	$: hasFeaturedModels = categoryAvailability.featured;
+	$: hasSharedModels = categoryAvailability.shared;
+	$: hasOwnedModels = categoryAvailability.owned;
+	$: showCategoryFilters = items.some((item) => isVisibleItem(item));
+
+	$: if (selectedCategory !== 'all' && !categoryAvailability[selectedCategory]) {
+		selectedCategory = 'all';
+	}
 
 	let ollamaVersion = null;
 	let selectedModelIdx = 0;
@@ -113,48 +233,13 @@
 	$: filteredItems = (
 		searchValue
 			? fuse
-					.search(searchValue)
-					.map((e) => {
-						return e.item;
-					})
-					.filter((item) => {
-						if (selectedTag === '') {
-							return true;
-						}
-						return (item.model?.tags ?? []).map((tag) => tag.name).includes(selectedTag);
-					})
-					.filter((item) => {
-						if (selectedConnectionType === '') {
-							return true;
-						} else if (selectedConnectionType === 'local') {
-							return item.model?.connection_type === 'local';
-						} else if (selectedConnectionType === 'external') {
-							return item.model?.connection_type === 'external';
-						} else if (selectedConnectionType === 'direct') {
-							return item.model?.direct;
-						}
-					})
-			: items
-					.filter((item) => {
-						if (selectedTag === '') {
-							return true;
-						}
-						return (item.model?.tags ?? []).map((tag) => tag.name).includes(selectedTag);
-					})
-					.filter((item) => {
-						if (selectedConnectionType === '') {
-							return true;
-						} else if (selectedConnectionType === 'local') {
-							return item.model?.connection_type === 'local';
-						} else if (selectedConnectionType === 'external') {
-							return item.model?.connection_type === 'external';
-						} else if (selectedConnectionType === 'direct') {
-							return item.model?.direct;
-						}
-					})
+				.search(searchValue)
+				.map((e) => e.item)
+				.filter((item) => matchesSelectedCategory(item, selectedCategory))
+			: items.filter((item) => matchesSelectedCategory(item, selectedCategory))
 	).filter((item) => !(item.model?.info?.meta?.hidden ?? false));
 
-	$: if (selectedTag || selectedConnectionType) {
+	$: if (selectedCategory) {
 		resetView();
 	} else {
 		resetView();
@@ -311,15 +396,15 @@
 	};
 
 	onMount(async () => {
-		if (items) {
-			tags = items
-				.filter((item) => !(item.model?.info?.meta?.hidden ?? false))
-				.flatMap((item) => item.model?.tags ?? [])
-				.map((tag) => tag.name);
+		//if (items) {
+		//	tags = items
+		//		.filter((item) => !(item.model?.info?.meta?.hidden ?? false))
+		//		.flatMap((item) => item.model?.tags ?? [])
+		//		.map((tag) => tag.name);
 
-			// Remove duplicates and sort
-			tags = Array.from(new Set(tags)).sort((a, b) => a.localeCompare(b));
-		}
+		//	// Remove duplicates and sort
+		//	tags = Array.from(new Set(tags)).sort((a, b) => a.localeCompare(b));
+		//}
 	});
 
 	$: if (show) {
@@ -361,12 +446,29 @@
 
 <DropdownMenu.Root
 	bind:open={show}
-	onOpenChange={async () => {
+	onOpenChange={async (isOpen) => {
+		if (isOpen) {
+		// Fetch models now so items are populated while the menu mounts
+		models.set(
+			await getModels(
+			localStorage.token,
+			$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
+			)
+		);
+
+		// (optional) focus after items land
+		await tick();
 		searchValue = '';
 		window.setTimeout(() => document.getElementById('model-search-input')?.focus(), 0);
 
-		resetView();
+		// ensure selection positioning uses the populated list
+		await resetView();
+		} else {
+		// closing cleanup
+		searchValue = '';
+		}
 	}}
+
 	closeFocus={false}
 >
 	<DropdownMenu.Trigger
@@ -376,19 +478,12 @@
 		aria-label={placeholder}
 		id="model-selector-{id}-button"
 	>
+		<!-- svelte-ignore a11y-no-static-element-interactions -->
 		<div
 			class="flex w-full text-left px-0.5 bg-transparent truncate {triggerClassName} justify-between {($settings?.highContrastMode ??
 			false)
 				? 'dark:placeholder-gray-100 placeholder-gray-800'
 				: 'placeholder-gray-400'}"
-			on:mouseenter={async () => {
-				models.set(
-					await getModels(
-						localStorage.token,
-						$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-					)
-				);
-			}}
 		>
 			{#if selectedModel}
 				{selectedModel.label}
@@ -443,102 +538,97 @@
 				</div>
 			{/if}
 
-			<div class="px-2">
-				{#if tags && items.filter((item) => !(item.model?.info?.meta?.hidden ?? false)).length > 0}
-					<div
-						class=" flex w-full bg-white dark:bg-gray-850 overflow-x-auto scrollbar-none font-[450] mb-0.5"
-						on:wheel={(e) => {
-							if (e.deltaY !== 0) {
-								e.preventDefault();
-								e.currentTarget.scrollLeft += e.deltaY;
-							}
-						}}
-					>
-						<div
-							class="flex gap-1 w-fit text-center text-sm rounded-full bg-transparent px-1.5 whitespace-nowrap"
-							bind:this={tagsContainerElement}
-						>
-							{#if items.find((item) => item.model?.connection_type === 'local') || items.find((item) => item.model?.connection_type === 'external') || items.find((item) => item.model?.direct) || tags.length > 0}
-								<button
-									class="min-w-fit outline-none px-1.5 py-0.5 {selectedTag === '' &&
-									selectedConnectionType === ''
-										? ''
-										: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
-									aria-pressed={selectedTag === '' && selectedConnectionType === ''}
-									on:click={() => {
-										selectedConnectionType = '';
-										selectedTag = '';
-									}}
-								>
-									{$i18n.t('All')}
-								</button>
-							{/if}
+							<div class="px-3">
+                                {#if showCategoryFilters}
+                                        <div
+                                                class=" flex w-full bg-white dark:bg-gray-850 overflow-x-auto scrollbar-none mb-0.5"
+                                                on:wheel={(e) => {
+                                                        if (e.deltaY !== 0) {
+                                                                e.preventDefault();
+                                                                e.currentTarget.scrollLeft += e.deltaY;
+                                                        }
+                                                }}
+                                        >
+                                                <div
+                                                        class="flex gap-1 w-fit text-center text-sm font-medium rounded-full bg-transparent px-1.5 pb-0.5"
+                                                        bind:this={tagsContainerElement}
+                                                >
+                                                        <button
+                                                                type="button"
+                                                                class="min-w-fit outline-none px-1.5 py-0.5 {selectedCategory === 'all'
+                                                                        ? ''
+                                                                        : 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
+                                                                aria-pressed={selectedCategory === 'all'}
+                                                                on:click={() => {
+                                                                        selectedCategory = 'all';
+                                                                }}
+                                                        >
+                                                                {$i18n.t('All')}
+                                                        </button>
 
-							{#if items.find((item) => item.model?.connection_type === 'local')}
-								<button
-									class="min-w-fit outline-none px-1.5 py-0.5 {selectedConnectionType === 'local'
-										? ''
-										: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
-									aria-pressed={selectedConnectionType === 'local'}
-									on:click={() => {
-										selectedTag = '';
-										selectedConnectionType = 'local';
-									}}
-								>
-									{$i18n.t('Local')}
-								</button>
-							{/if}
+                                                        {#if hasExternalModels}
+                                                                <button
+                                                                        type="button"
+                                                                        class="min-w-fit outline-none px-1.5 py-0.5 {selectedCategory === 'external'
+                                                                                ? ''
+                                                                                : 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
+                                                                        aria-pressed={selectedCategory === 'external'}
+                                                                        on:click={() => {
+                                                                                selectedCategory = 'external';
+                                                                        }}
+                                                                >
+                                                                        {$i18n.t('External')}
+                                                                </button>
+                                                        {/if}
 
-							{#if items.find((item) => item.model?.connection_type === 'external')}
-								<button
-									class="min-w-fit outline-none px-1.5 py-0.5 {selectedConnectionType === 'external'
-										? ''
-										: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
-									aria-pressed={selectedConnectionType === 'external'}
-									on:click={() => {
-										selectedTag = '';
-										selectedConnectionType = 'external';
-									}}
-								>
-									{$i18n.t('External')}
-								</button>
-							{/if}
+                                                        {#if hasFeaturedModels}
+                                                                <button
+                                                                        type="button"
+                                                                        class="min-w-fit outline-none px-1.5 py-0.5 {selectedCategory === 'featured'
+                                                                                ? ''
+                                                                                : 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
+                                                                        aria-pressed={selectedCategory === 'featured'}
+                                                                        on:click={() => {
+                                                                                selectedCategory = 'featured';
+                                                                        }}
+                                                                >
+                                                                        {$i18n.t('Featured')}
+                                                                </button>
+                                                        {/if}
 
-							{#if items.find((item) => item.model?.direct)}
-								<button
-									class="min-w-fit outline-none px-1.5 py-0.5 {selectedConnectionType === 'direct'
-										? ''
-										: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
-									aria-pressed={selectedConnectionType === 'direct'}
-									on:click={() => {
-										selectedTag = '';
-										selectedConnectionType = 'direct';
-									}}
-								>
-									{$i18n.t('Direct')}
-								</button>
-							{/if}
+                                                        {#if hasSharedModels}
+                                                                <button
+                                                                        type="button"
+                                                                        class="min-w-fit outline-none px-1.5 py-0.5 {selectedCategory === 'shared'
+                                                                                ? ''
+                                                                                : 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
+                                                                        aria-pressed={selectedCategory === 'shared'}
+                                                                        on:click={() => {
+                                                                                selectedCategory = 'shared';
+                                                                        }}
+                                                                >
+                                                                        {$i18n.t('Shared')}
+                                                                </button>
+                                                        {/if}
 
-							{#each tags as tag}
-								<Tooltip content={tag}>
-									<button
-										class="min-w-fit outline-none px-1.5 py-0.5 {selectedTag === tag
-											? ''
-											: 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
-										aria-pressed={selectedTag === tag}
-										on:click={() => {
-											selectedConnectionType = '';
-											selectedTag = tag;
-										}}
-									>
-										{tag.length > 16 ? `${tag.slice(0, 16)}...` : tag}
-									</button>
-								</Tooltip>
-							{/each}
-						</div>
-					</div>
-				{/if}
-			</div>
+                                                        {#if hasOwnedModels}
+                                                                <button
+                                                                        type="button"
+                                                                        class="min-w-fit outline-none px-1.5 py-0.5 {selectedCategory === 'owned'
+                                                                                ? ''
+                                                                                : 'text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition capitalize"
+                                                                        aria-pressed={selectedCategory === 'owned'}
+                                                                        on:click={() => {
+                                                                                selectedCategory = 'owned';
+                                                                        }}
+                                                                >
+                                                                        {$i18n.t('Owned')}
+                                                                </button>
+                                                        {/if}
+                                                </div>
+                                        </div>
+                                {/if}
+                        </div>
 
 			<div class="px-2.5 max-h-64 overflow-y-auto group relative">
 				{#each filteredItems as item, index}
